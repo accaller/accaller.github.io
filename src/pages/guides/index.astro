@@ -68,10 +68,25 @@ function groupGuides(guides: Guide[]): Array<{
     if (catGuides.length === 0) continue;
 
     const subgroups: Array<{ sub?: SubDef; guides: Guide[] }> = [];
+    // 1) 按配置的顺序，先放白名单里的 subcategory
     for (const sub of cat.subcategories) {
       const list = catGuides.filter((g) => g.data.subcategory === sub.key);
       if (list.length > 0) subgroups.push({ sub, guides: list });
     }
+    // 2) 收集所有"未在白名单但确实有 subcategory"的文章，按 subcategory 自动分组追加
+    const whitelistKeys = new Set(cat.subcategories.map((s) => s.key));
+    const extras = new Map<string, Guide[]>(); // subKey -> guides
+    for (const g of catGuides) {
+      const sk = g.data.subcategory;
+      if (!sk) continue; // 无 sub 的放到最后"其他"
+      if (whitelistKeys.has(sk)) continue; // 已在白名单的已经处理
+      if (!extras.has(sk)) extras.set(sk, []);
+      extras.get(sk)!.push(g);
+    }
+    for (const [name, list] of extras) {
+      subgroups.push({ sub: { name, key: name }, guides: list });
+    }
+    // 3) 无 subcategory 的文章 → 放"其他"组（或直接无标题组）
     const unsub = catGuides.filter((g) => !g.data.subcategory);
     if (unsub.length > 0 && cat.unsubLabel) {
       subgroups.push({ sub: { name: cat.unsubLabel, key: '' }, guides: unsub });
