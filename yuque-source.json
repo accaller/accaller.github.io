@@ -1,11 +1,17 @@
 {
-  "$comment": "语雀公开同步配置（不需要 Token）。每个 repo 对应一个语雀知识库。bootstrap 是该知识库里任意一篇文档的 slug，用来获取完整目录结构。",
+  "$comment": "语雀公开同步配置（不需要 Token）。repo 对应语雀知识库；bootstrap 是该库内任意一篇公开文档的 slug，用来拿完整目录树。如果库里还没文档，bootstrap 留空字符串即可跳过同步。",
   "user": "yuqueyonghu-gwdsm5",
   "repos": [
     {
       "repo": "zldo8a",
       "category": "缺氧",
       "bootstrap": "npatg94udp4q55d3"
+    },
+    {
+      "repo": "",
+      "category": "CS",
+      "bootstrap": "",
+      "$comment": "等你在 CS 知识库里新建一篇文档并设为公开后，把 URL（yuque.com/xxxx/AAAAA/BBBBB）里的 AAAAA 填到 repo，BBBBB 填到 bootstrap 就能自动同步了。"
     }
   ]
 }

@@ -6,7 +6,7 @@
  *   1. 访问知识库里任意一篇文档的公开页面 → HTML 里嵌入了 window.appData
  *   2. appData.book.toc 包含完整的文档目录树（标题/URL/层级）
  *   3. 调用语雀公开 API 获取每篇文档的 content（Lake 格式）
- *   4. 将 Lake 格式转换为 Markdown
+ *   4. 将 Lake 格式转换为 Markdown，并把语雀 CDN 图片下载到本地 public/images/yuque/
  *   5. 生成 .md 文件到 src/content/guides/
  *   6. 删除语雀中已不存在的文章（prune）
  *
@@ -18,13 +18,16 @@
  * 环境变量：无需（不需要 Token）
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
-import { join, basename, extname, resolve } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, createWriteStream } from 'node:fs';
+import { join, basename, extname } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = join(ROOT, 'yuque-source.json');
 const CONTENT_DIR = join(ROOT, 'src/content/guides');
 const YUQUE_BASE = 'https://www.yuque.com';
+const IMAGE_OUT_DIR = join(ROOT, 'public/images/yuque');
+const IMAGE_WEB_PREFIX = '/images/yuque/';
 
 // ==================== HTTP 工具 ====================
 
@@ -46,6 +49,23 @@ async function fetchText(url, headers = {}) {
 async function fetchJSON(url, headers = {}) {
   const text = await fetchText(url, headers);
   return JSON.parse(text);
+}
+
+async function downloadBinary(url, dest) {
+  const resp = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9',
+      'Referer': 'https://www.yuque.com/',
+    },
+  });
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status}: ${url}`);
+  }
+  const buf = Buffer.from(await resp.arrayBuffer());
+  writeFileSync(dest, buf);
+  return buf.length;
 }
 
 // ==================== 解析 appData ====================
@@ -111,6 +131,79 @@ function buildTocTree(toc) {
   return docs;
 }
 
+// ==================== 图片本地化 ====================
+
+function md5(str) {
+  return createHash('md5').update(str).digest('hex').slice(0, 12);
+}
+
+/** 提取图片 URL 中的扩展名，无扩展名则按内容类型推断 */
+function guessImageExt(url, contentType) {
+  const clean = url.split('?')[0].split('#')[0];
+  const m = clean.match(/\.(png|jpe?g|gif|webp|avif|svg|bmp)$/i);
+  if (m) return '.' + m[1].toLowerCase();
+  if (contentType) {
+    const ct = contentType.toLowerCase();
+    if (ct.includes('png')) return '.png';
+    if (ct.includes('jpeg') || ct.includes('jpg')) return '.jpg';
+    if (ct.includes('gif')) return '.gif';
+    if (ct.includes('webp')) return '.webp';
+    if (ct.includes('svg')) return '.svg';
+  }
+  return '.png'; // 语雀图片多为 png
+}
+
+/**
+ * 把 Markdown 中所有语雀 CDN 图片下载到本地
+ * 返回 { markdown: 替换后的内容, count: 下载数量 }
+ */
+async function localizeImages(markdown, dryRun) {
+  if (!existsSync(IMAGE_OUT_DIR)) mkdirSync(IMAGE_OUT_DIR, { recursive: true });
+
+  // 匹配 ![alt](https://... 语雀 CDN 域名 或 mdn.alipayobjects)
+  const imgRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  let count = 0;
+  let skipped = 0;
+  const mdNew = markdown.replace(imgRegex, (match, alt, url) => {
+    // 判断是否为需要下载的外链图（语雀CDN/支付宝CDN/其他CDN，只要 http 的都下载，避免防盗链）
+    if (!/^https?:\/\//.test(url)) return match; // 已经是本地路径，跳过
+
+    const ext = guessImageExt(url, '');
+    const key = md5(url);
+    const fileName = `${key}${ext}`;
+    const localPath = join(IMAGE_OUT_DIR, fileName);
+    const webPath = `${IMAGE_WEB_PREFIX}${fileName}`;
+
+    if (!existsSync(localPath)) {
+      // 异步串行下载（这里先记下任务）
+      if (!dryRun) {
+        _imgDLTasks.push({ url, localPath, name: fileName });
+      }
+    }
+    count++;
+    return `![${alt || fileName}](${webPath})`;
+  });
+
+  // 真正执行下载（异步，串行避免并发太高触发反爬）
+  if (!dryRun && _imgDLTasks.length) {
+    console.log(`    🖼️  下载 ${_imgDLTasks.length} 张图片...`);
+    for (let i = 0; i < _imgDLTasks.length; i++) {
+      const t = _imgDLTasks[i];
+      try {
+        const bytes = await downloadBinary(t.url, t.localPath);
+        console.log(`      ${i + 1}/${_imgDLTasks.length} ${t.name} (${(bytes / 1024).toFixed(1)}KB)`);
+      } catch (e) {
+        console.warn(`      ⚠ ${t.name} 下载失败: ${e.message}`);
+      }
+    }
+    _imgDLTasks = [];
+  }
+
+  return { markdown: mdNew, count, skipped };
+}
+
+let _imgDLTasks = [];
+
 // ==================== Lake → Markdown 转换 ====================
 
 /** 把语雀 Lake 格式内容转换为 Markdown */
@@ -157,7 +250,6 @@ function lakeToMarkdown(lakeHtml) {
     try {
       const decoded = decodeURIComponent(encoded);
       const data = JSON.parse(decoded);
-      // 尝试提取有意义的文本
       return data.text || data.content || data.title || fallback || '';
     } catch (e) {
       return fallback || '';
@@ -165,6 +257,10 @@ function lakeToMarkdown(lakeHtml) {
   });
   // 自闭合 card
   md = md.replace(/<card[^>]*\/>/gi, '');
+
+  // 处理 <img> 普通标签（兜底）
+  md = md.replace(/<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)"[^>]*\/?\s*>/gi, '\n\n![$2]($1)\n\n');
+  md = md.replace(/<img[^>]*src="([^"]+)"[^>]*\/?\s*>/gi, '\n\n![image]($1)\n\n');
 
   // 处理标题
   md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n# $1\n\n');
@@ -236,9 +332,17 @@ function generateFrontmatter(doc, category, subcategory, bookSlug, userSlug) {
   const date = doc.published_at || doc.created_at || new Date().toISOString();
   const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date().toISOString().split('T')[0];
 
+  // description: 截断正文前 60 字，防止空描述
+  let desc = doc.description || doc.custom_description || '';
+  desc = desc.replace(/\s+/g, ' ').trim();
+  if (!desc && doc.bodyText) {
+    desc = doc.bodyText.replace(/\s+/g, ' ').trim().slice(0, 80);
+  }
+  if (!desc) desc = '暂无简介';
+
   let fm = `---
 title: ${escapeYaml(doc.title)}
-description: ${escapeYaml(doc.description || doc.custom_description || '暂无简介')}
+description: ${escapeYaml(desc)}
 category: ${escapeYaml(category)}
 `;
   if (subcategory) {
@@ -267,7 +371,7 @@ function slugify(title, subcategory) {
 
 // ==================== frontmatter 解析（用于 prune） ====================
 
-function parseFrontmatterCategory(content) {
+function parseFrontmatterMeta(content) {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return { category: '', manual: false };
   const block = m[1];
@@ -296,7 +400,7 @@ async function main() {
   }
 
   const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
-  if (!config.user || !Array.isArray(config.repos) || config.repos.length === 0) {
+  if (!config.user || !Array.isArray(config.repos)) {
     console.error('✗ yuque-source.json 配置不完整');
     process.exit(1);
   }
@@ -307,12 +411,17 @@ async function main() {
 
   console.log('🚀 开始语雀公开同步（无需 Token）\n');
 
-  const allImportedSlugs = {}; // category -> Set of slugs
+  const importedFiles = new Set(); // 所有同步来的 slug（无扩展名）
 
   for (const repo of config.repos) {
     const { repo: bookSlug, category, bootstrap } = repo;
-    if (!bookSlug || !category || !bootstrap) {
+    if (!bookSlug || !category) {
       console.error(`✗ 配置不完整: ${JSON.stringify(repo)}`);
+      continue;
+    }
+    // bootstrap 可选：如果没有，说明暂时还没文档，跳 TOC 步骤（但仍需 prune，所以不跳过）
+    if (!bootstrap) {
+      console.log(`\n========== 知识库：${category}（${bookSlug}）暂无 bootstrap 文档，跳过同步 ==========`);
       continue;
     }
 
@@ -321,10 +430,14 @@ async function main() {
     // 1. 获取 TOC（通过 bootstrap 文档页面）
     const bootstrapUrl = `${YUQUE_BASE}/${config.user}/${bookSlug}/${bootstrap}`;
     console.log(`📥 获取目录结构: ${bootstrapUrl}`);
-    const html = await fetchText(bootstrapUrl, {
-      Referer: YUQUE_BASE,
-    });
-    const appData = extractAppData(html);
+    let appData;
+    try {
+      const html = await fetchText(bootstrapUrl, { Referer: YUQUE_BASE });
+      appData = extractAppData(html);
+    } catch (e) {
+      console.error(`✗ 无法访问 bootstrap 文档：${e.message}（请确认该文档已设为公开）`);
+      continue;
+    }
     if (!appData) {
       console.error(`✗ 无法从页面提取 appData`);
       continue;
@@ -341,12 +454,10 @@ async function main() {
     const docs = buildTocTree(bookInfo.toc);
     console.log(`📄 找到 ${docs.length} 篇文档\n`);
 
-    if (!allImportedSlugs[category]) allImportedSlugs[category] = new Set();
-
     // 3. 逐篇获取内容并生成 .md
     for (const doc of docs) {
       const slug = slugify(doc.title, doc.subcategory);
-      allImportedSlugs[category].add(slug);
+      importedFiles.add(slug);
       const targetPath = join(CONTENT_DIR, `${slug}.md`);
 
       // 调用语雀公开 API 获取文档内容
@@ -358,58 +469,65 @@ async function main() {
         });
         docData = apiResp.data || apiResp;
       } catch (e) {
-        console.warn(`  ⚠ 跳过（无法公开访问）: ${doc.title} — 请在语雀知识库设置中开启「公开访问」`);
-        allImportedSlugs[category].delete(slug);
+        console.warn(`  ⚠ 跳过（无法公开访问）: ${doc.title} — 请在语雀将该文档设为公开`);
+        importedFiles.delete(slug);
         continue;
       }
 
       const content = docData.content || '';
-      const description = docData.description || '';
-      const markdown = lakeToMarkdown(content);
+      let markdown = lakeToMarkdown(content);
+
+      // 3.1 图片本地化（下载到 public/images/yuque 并替换 URL）
+      const { count, markdown: mdLocalized } = await localizeImages(markdown, dryRun);
+      markdown = mdLocalized;
+
+      const bodyText = markdown.replace(/[#>*_`~\-\[\]()!]/g, '').slice(0, 200);
 
       const fullDoc = {
         title: doc.title,
         slug: doc.slug,
-        description,
+        description: docData.description,
         published_at: docData.published_at,
         created_at: docData.created_at,
+        bodyText,
       };
 
       const fm = generateFrontmatter(fullDoc, category, doc.subcategory, bookSlug, config.user);
       const fileContent = fm + markdown + '\n';
 
       if (dryRun) {
-        console.log(`  [DRY-RUN] ${slug}.md [${doc.subcategory || 'root'}] (${markdown.length} chars)`);
+        console.log(`  [DRY-RUN] ${slug}.md [${doc.subcategory || 'root'}] (${markdown.length} chars, ${count} imgs)`);
         continue;
       }
 
       writeFileSync(targetPath, fileContent, 'utf-8');
-      console.log(`  ✅ ${slug}.md [${doc.subcategory || 'root'}] (${markdown.length} chars)`);
-    }
-
-    // 4. Prune：删除该分类下、不在 TOC 中的、非 manual 的 .md 文件
-    if (!dryRun) {
-      console.log(`\n🗑️  Prune: 清理 ${category} 分类下语雀已删除的文章...`);
-      const existing = readdirSync(CONTENT_DIR).filter((f) => extname(f) === '.md');
-      let pruned = 0;
-      for (const f of existing) {
-        const slugName = basename(f, '.md');
-        if (allImportedSlugs[category].has(slugName)) continue;
-        const filePath = join(CONTENT_DIR, f);
-        const raw = readFileSync(filePath, 'utf-8');
-        const meta = parseFrontmatterCategory(raw);
-        if (meta.category !== category) continue;
-        if (meta.manual) {
-          console.log(`  🛡  保留（manual）: ${f}`);
-          continue;
-        }
-        unlinkSync(filePath);
-        console.log(`  ❌ 删除: ${f}`);
-        pruned++;
-      }
-      if (pruned === 0) console.log(`  无需清理。`);
+      console.log(`  ✅ ${slug}.md [${doc.subcategory || 'root'}] (${markdown.length} chars, ${count} imgs)`);
     }
   }
+
+  // 4. 统一 Prune：遍历所有 .md，同步没来的且非 manual=true 的全删（category 不限，跨 category 的多余文章也清理）
+  console.log(`\n🗑️  Prune: 清理语雀已删除的文章（仅保留 manual=true）...`);
+  const existing = readdirSync(CONTENT_DIR).filter((f) => extname(f) === '.md');
+  let pruned = 0;
+  for (const f of existing) {
+    const slugName = basename(f, '.md');
+    const filePath = join(CONTENT_DIR, f);
+    const raw = readFileSync(filePath, 'utf-8');
+    const meta = parseFrontmatterMeta(raw);
+    if (meta.manual) {
+      console.log(`  🛡  保留（manual=true）: ${f}（category=${meta.category || '-'}）`);
+      continue;
+    }
+    if (importedFiles.has(slugName)) continue;
+    if (dryRun) {
+      console.log(`  [DRY-RUN] 会删除: ${f}`);
+    } else {
+      unlinkSync(filePath);
+      console.log(`  ❌ 删除: ${f}`);
+    }
+    pruned++;
+  }
+  if (pruned === 0) console.log(`  无需清理。`);
 
   console.log('\n✅ 同步完成！');
   if (dryRun) console.log('(DRY-RUN 模式：未实际写文件)');
