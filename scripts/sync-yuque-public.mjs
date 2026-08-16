@@ -117,7 +117,7 @@ function buildTocTree(toc) {
   const docs = [];
   for (const item of toc) {
     if (item.type !== 'DOC') continue;
-    if (item.visible === 0) continue; // 隐藏的跳过
+    // 不再跳过 visible=0 的文档（可能是草稿或隐藏文档，仍然尝试同步）
     const parentUuid = item.parent_uuid || '';
     const subcategory = titleMap[parentUuid] || ''; // 父 TITLE 节点 = subcategory
     docs.push({
