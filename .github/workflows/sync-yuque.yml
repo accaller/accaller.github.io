@@ -20,11 +20,17 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install dependencies
+        run: npm install
+
       - name: Sync from Yuque (public, no token needed)
         run: node scripts/sync-yuque-public.mjs
 
+      - name: Compress images to WebP (fallback for legacy PNGs)
+        run: node scripts/compress-images.mjs
+
       - name: Build site
-        run: npm install && npm run build
+        run: npm run build
 
       - name: Check for changes
         id: changes

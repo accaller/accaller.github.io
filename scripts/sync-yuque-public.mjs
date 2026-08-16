@@ -18,9 +18,10 @@
  * 环境变量：无需（不需要 Token）
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, createWriteStream } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, statSync, createWriteStream } from 'node:fs';
 import { join, basename, extname } from 'node:path';
 import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = join(ROOT, 'yuque-source.json');
@@ -28,6 +29,10 @@ const CONTENT_DIR = join(ROOT, 'src/content/guides');
 const YUQUE_BASE = 'https://www.yuque.com';
 const IMAGE_OUT_DIR = join(ROOT, 'public/images/yuque');
 const IMAGE_WEB_PREFIX = '/images/yuque/';
+
+// 图片压缩参数：宽度上限 1024px，WebP 质量 80
+const IMG_MAX_WIDTH = 1024;
+const IMG_WEBP_QUALITY = 80;
 
 // ==================== HTTP 工具 ====================
 
@@ -154,8 +159,12 @@ function guessImageExt(url, contentType) {
 }
 
 /**
- * 把 Markdown 中所有语雀 CDN 图片下载到本地
- * 返回 { markdown: 替换后的内容, count: 下载数量 }
+ * 把 Markdown 中所有语雀 CDN 图片下载到本地并压缩为 WebP
+ *   - 下载原文件到 <key>.<原ext>（临时）
+ *   - 用 sharp 转为 <key>.webp（最大宽度 1024px，质量 80）
+ *   - 删除原文件
+ *   - markdown 中引用 /images/yuque/<key>.webp
+ * 返回 { markdown: 替换后的内容, count: 图片数量 }
  */
 async function localizeImages(markdown, dryRun) {
   if (!existsSync(IMAGE_OUT_DIR)) mkdirSync(IMAGE_OUT_DIR, { recursive: true });
@@ -163,43 +172,64 @@ async function localizeImages(markdown, dryRun) {
   // 匹配 ![alt](https://... 语雀 CDN 域名 或 mdn.alipayobjects)
   const imgRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
   let count = 0;
-  let skipped = 0;
   const mdNew = markdown.replace(imgRegex, (match, alt, url) => {
     // 判断是否为需要下载的外链图（语雀CDN/支付宝CDN/其他CDN，只要 http 的都下载，避免防盗链）
     if (!/^https?:\/\//.test(url)) return match; // 已经是本地路径，跳过
 
     const ext = guessImageExt(url, '');
     const key = md5(url);
-    const fileName = `${key}${ext}`;
-    const localPath = join(IMAGE_OUT_DIR, fileName);
-    const webPath = `${IMAGE_WEB_PREFIX}${fileName}`;
+    const webpName = `${key}.webp`;
+    const webpPath = join(IMAGE_OUT_DIR, webpName);
+    const srcName = `${key}${ext}`; // 原始文件名（用于下载临时存放）
+    const srcPath = join(IMAGE_OUT_DIR, srcName);
+    const webPath = `${IMAGE_WEB_PREFIX}${webpName}`;
 
-    if (!existsSync(localPath)) {
-      // 异步串行下载（这里先记下任务）
+    // 如果 webp 已存在，跳过下载与压缩
+    if (!existsSync(webpPath)) {
       if (!dryRun) {
-        _imgDLTasks.push({ url, localPath, name: fileName });
+        _imgDLTasks.push({ url, srcPath, webpPath, srcName, webpName });
       }
     }
     count++;
-    return `![${alt || fileName}](${webPath})`;
+    return `![${alt || webpName}](${webPath})`;
   });
 
-  // 真正执行下载（异步，串行避免并发太高触发反爬）
+  // 真正执行下载 + 压缩（异步，串行避免并发太高触发反爬）
   if (!dryRun && _imgDLTasks.length) {
-    console.log(`    🖼️  下载 ${_imgDLTasks.length} 张图片...`);
+    console.log(`    🖼️  下载并压缩 ${_imgDLTasks.length} 张图片...`);
     for (let i = 0; i < _imgDLTasks.length; i++) {
       const t = _imgDLTasks[i];
       try {
-        const bytes = await downloadBinary(t.url, t.localPath);
-        console.log(`      ${i + 1}/${_imgDLTasks.length} ${t.name} (${(bytes / 1024).toFixed(1)}KB)`);
+        const bytes = await downloadBinary(t.url, t.srcPath);
+        // 用 sharp 转为 WebP，限制宽度
+        const info = await sharp(t.srcPath)
+          .rotate()
+          .resize({ width: IMG_MAX_WIDTH, height: undefined, withoutEnlargement: true, fit: 'inside' })
+          .webp({ quality: IMG_WEBP_QUALITY })
+          .toFile(t.webpPath);
+        // 删除原始文件（如果不是 webp 本身）
+        if (t.srcPath !== t.webpPath && existsSync(t.srcPath)) {
+          unlinkSync(t.srcPath);
+        }
+        const afterKB = (existsSync(t.webpPath) ? statSize(t.webpPath) : 0) / 1024;
+        console.log(`      ${i + 1}/${_imgDLTasks.length} ${t.webpName} (${(bytes / 1024).toFixed(1)}KB → ${afterKB.toFixed(1)}KB, ${info.width}x${info.height})`);
       } catch (e) {
-        console.warn(`      ⚠ ${t.name} 下载失败: ${e.message}`);
+        console.warn(`      ⚠ ${t.webpName} 处理失败: ${e.message}`);
       }
     }
     _imgDLTasks = [];
   }
 
-  return { markdown: mdNew, count, skipped };
+  return { markdown: mdNew, count };
+}
+
+/** 读取文件大小（字节） */
+function statSize(p) {
+  try {
+    return statSync(p).size;
+  } catch {
+    return 0;
+  }
 }
 
 let _imgDLTasks = [];

@@ -29,7 +29,7 @@ const { Content } = await render(guide);
       </div>
     </header>
 
-    {guide.data.cover && <img src={guide.data.cover} alt={guide.data.title} width="860" height="400" />}
+    {guide.data.cover && <img src={guide.data.cover} alt={guide.data.title} width="860" height="400" loading="lazy" decoding="async" />}
 
     <div class="prose">
       <Content />
