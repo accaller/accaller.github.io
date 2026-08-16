@@ -1,0 +1,7 @@
+{
+  "$comment": "语雀自动同步配置（需语雀超级会员创建 API Token 后方可生效，暂不可用不影响手动更新）。当前板块：CS2、缺氧。",
+  "user": "yuqueyonghu-gwdsm5",
+  "repos": [
+    { "repo": "zldo8a", "game": "CS2" }
+  ]
+}
