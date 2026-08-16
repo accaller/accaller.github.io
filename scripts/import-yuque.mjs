@@ -3,69 +3,84 @@
  * 语雀导出 Markdown 批量导入脚本
  *
  * 用途：把语雀导出的 .md 文件批量转换成 Astro 攻略站可用的格式
+ *       支持读取语雀目录层级 → 自动映射为 subcategory（二级分类）
  *
  * 用法：
- *   node scripts/import-yuque.mjs <语雀导出目录> [游戏名]
+ *   node scripts/import-yuque.mjs <语雀导出目录> <一级分类> [--update] [--prune]
  *
  * 示例：
- *   node scripts/import-yuque.mjs ./export/原神 原神
- *   node scripts/import-yuque.mjs ./export/我的知识库
+ *   # 首次导入「缺氧」知识库（subcategory 从导出的目录名推断）
+ *   node scripts/import-yuque.mjs ./export/缺氧 缺氧
  *
- * 它会做什么：
- *   1. 扫描目录下所有 .md 文件
- *   2. 给每个文件自动补上 frontmatter（标题取自文件名或第一个 #，日期取今天）
- *   3. 把文件名转成 URL 友好的英文/拼音格式（保留中文也行，Astro 支持）
- *   4. 复制到 src/content/guides/ 目录
- *   5. 打印导入清单，你确认后 push 即可
+ *   # 日常同步：保留原 frontmatter，只刷新正文；且删除 guides 中语雀已删除的文件
+ *   node scripts/import-yuque.mjs ./export/缺氧 缺氧 --update --prune
  *
- * 安全说明：
- *   - 不会修改你语雀导出的原始文件
- *   - 目标目录已存在同名文件会跳过并提示
- *   - 所有操作都是本地文件复制，不联网
+ * 语雀目录 → 站点分类 映射例子：
+ *   导出目录/水泉/盐水泉.md      → category=缺氧, subcategory=水泉, slug=水泉-盐水泉
+ *   导出目录/农牧/浆果糕.md        → category=缺氧, subcategory=农牧, slug=农牧-浆果糕
+ *   导出目录/火箭.md              → category=缺氧, subcategory=undefined, slug=火箭
+ *
+ * prune 规则（--prune 开启）：
+ *   遍历 src/content/guides/ 下所有 category=<一级分类> 且 frontmatter 未标记 !manual=true
+ *   的文件；若其 slug 不在「本轮从语雀导入的 slug 列表」中，就删掉。
+ *
+ * 防止误删的手工白名单：
+ *   如果某个 .md 文件是你手工写的（不是语雀同步来的），在 frontmatter 里加 `manual: true`，
+ *   就不会被 --prune 误删。
  */
 
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
-import { join, basename, extname, resolve, dirname } from 'node:path';
-
-// ==================== 配置 ====================
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync, unlinkSync, readlinkSync } from 'node:fs';
+import { join, basename, extname, resolve, relative, sep } from 'node:path';
 
 const CONTENT_DIR = resolve(process.cwd(), 'src/content/guides');
 
 // ==================== 工具函数 ====================
 
-/** 递归扫描目录下所有 .md 文件 */
-function findMdFiles(dir) {
+/** 递归扫描目录下所有 .md 文件，返回相对 sourceDir 的路径列表 */
+function findMdFiles(dir, rootDir = dir) {
   const results = [];
   for (const entry of readdirSync(dir)) {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      results.push(...findMdFiles(fullPath));
+      results.push(...findMdFiles(fullPath, rootDir));
     } else if (extname(entry).toLowerCase() === '.md') {
-      results.push(fullPath);
+      results.push(relative(rootDir, fullPath));
     }
   }
   return results;
 }
 
+/** 从相对路径（语雀导出目录内部的路径）解析出 subcategory 和 slug */
+function parseRelPath(relPath) {
+  const parts = relPath.split(sep);
+  // parts 示例：['水泉', '盐水泉.md'] 或 ['农牧', '浆果糕.md'] 或 ['火箭.md']
+  if (parts.length <= 1) {
+    return { subcategory: undefined, slug: slugify(parts[0]) };
+  }
+  // 嵌套一级子目录，subcategory 是第一层目录名；slug 用「目录名-文件名」避免重名
+  const subcategory = parts[0];
+  const filename = parts.slice(1).join('-');
+  return { subcategory, slug: slugify(`${subcategory}-${filename}`) };
+}
+
 /** 从文件名生成 slug（保留中文，只处理空格和特殊字符） */
 function slugify(filename) {
   return basename(filename, '.md')
-    .replace(/\s+/g, '-')        // 空格转连字符
-    .replace(/[<>:"/\\|?*]/g, '') // 去掉文件系统非法字符
-    .replace(/^-+|-+$/g, '');     // 去掉首尾连字符
+    .replace(/\s+/g, '-')
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/^-+|-+$/g, '');
 }
 
 /** 从 Markdown 正文提取第一个 # 标题作为 title */
-function extractTitle(content, filename) {
+function extractTitle(content, fallback) {
   const match = content.match(/^#\s+(.+)$/m);
   if (match) return match[1].trim();
-  return basename(filename, '.md');
+  return basename(fallback, '.md');
 }
 
 /** 尝试从正文第一段提取摘要（最多 100 字） */
 function extractDescription(content) {
-  // 去掉 frontmatter、标题、图片、链接，取第一段纯文本
   const text = content
     .replace(/^---[\s\S]*?---/m, '')
     .replace(/^#+\s+.+$/gm, '')
@@ -77,56 +92,77 @@ function extractDescription(content) {
 }
 
 /** 生成 frontmatter */
-function generateFrontmatter(title, description, game, date, tags) {
-  return `---
+function generateFrontmatter(title, description, category, subcategory, date, tags) {
+  let fm = `---
 title: ${escapeYaml(title)}
 description: ${escapeYaml(description)}
-game: ${escapeYaml(game)}
-date: ${date}
+category: ${escapeYaml(category)}
+`;
+  if (subcategory) {
+    fm += `subcategory: ${escapeYaml(subcategory)}
+`;
+  }
+  fm += `date: ${date}
 tags: [${tags.map((t) => escapeYaml(t)).join(', ')}]
 ---
 
 `;
+  return fm;
 }
 
-/** 简单转义 YAML 字符串值（处理冒号、引号等） */
 function escapeYaml(str) {
+  if (str == null) return '""';
   if (/[:\#"'\[\]{}]/.test(str)) {
     return `"${str.replace(/"/g, '\\"')}"`;
   }
   return str;
 }
 
-/** 检查是否已有 frontmatter */
 function hasFrontmatter(content) {
   return content.startsWith('---');
 }
 
-/** 提取文件开头的 frontmatter 块（含结尾 --- 和换行）；没有则返回空串 */
 function extractFrontmatterBlock(content) {
   if (!hasFrontmatter(content)) return '';
   const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
   return match ? match[0] : '';
 }
 
-/** 剥掉开头的 frontmatter 块，返回纯正文 */
 function stripFrontmatter(content) {
+  return content.slice(extractFrontmatterBlock(content).length);
+}
+
+/** 解析 frontmatter 的 category 和 manual 字段（用于 prune） */
+function parseFrontmatter(content) {
   const block = extractFrontmatterBlock(content);
-  return content.slice(block.length);
+  const result = { category: '', manual: false };
+  if (!block) return result;
+  for (const line of block.split(/\r?\n/)) {
+    const catMatch = line.match(/^category:\s*(.+)$/);
+    if (catMatch) {
+      let v = catMatch[1].trim();
+      if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1).replace(/\\"/g, '"');
+      result.category = v;
+    }
+    if (/^manual:\s*true/.test(line)) result.manual = true;
+  }
+  return result;
 }
 
 // ==================== 主逻辑 ====================
 
 function main() {
-  // --update 模式：自动同步时使用，已存在的文件保留原 frontmatter、只更新正文
   const argv = process.argv.slice(2);
   const updateMode = argv.includes('--update');
-  const [sourceDir, gameName] = argv.filter((a) => !a.startsWith('--'));
+  const pruneMode = argv.includes('--prune');
+  const positional = argv.filter((a) => !a.startsWith('--'));
 
-  if (!sourceDir) {
-    console.error('用法: node scripts/import-yuque.mjs <语雀导出目录> [游戏名] [--update]');
-    console.error('示例: node scripts/import-yuque.mjs ./export/原神 原神');
-    console.error('      node scripts/import-yuque.mjs ./export/原神 原神 --update   # 更新模式：保留已有 frontmatter，只刷新正文');
+  const sourceDir = positional[0];
+  const category = positional[1];
+
+  if (!sourceDir || !category) {
+    console.error('用法: node scripts/import-yuque.mjs <语雀导出目录> <一级分类> [--update] [--prune]');
+    console.error('示例: node scripts/import-yuque.mjs ./export/缺氧 缺氧 --update --prune');
     process.exit(1);
   }
 
@@ -136,40 +172,44 @@ function main() {
     process.exit(1);
   }
 
-  const game = gameName || basename(sourcePath);
   const today = new Date().toISOString().split('T')[0];
 
-  // 确保目标目录存在
   if (!existsSync(CONTENT_DIR)) {
     mkdirSync(CONTENT_DIR, { recursive: true });
   }
 
-  const mdFiles = findMdFiles(sourcePath);
-  if (mdFiles.length === 0) {
+  const relFiles = findMdFiles(sourcePath);
+  if (relFiles.length === 0) {
     console.error(`✗ 在 ${sourcePath} 下没有找到 .md 文件`);
     process.exit(1);
   }
 
-  console.log(`\n🎮 导入任务：${game}`);
+  console.log(`\n🎮 导入任务：${category}`);
   console.log(`📂 源目录：${sourcePath}`);
-  console.log(`🎯 目标：${CONTENT_DIR}`);
-  console.log(`📄 找到 ${mdFiles.length} 个 .md 文件\n`);
+  console.log(`📄 找到 ${relFiles.length} 个 .md 文件\n`);
 
+  const importedSlugs = new Set();
   let imported = 0;
+  let updated = 0;
   let skipped = 0;
   const results = [];
 
-  for (const file of mdFiles) {
-    let content = readFileSync(file, 'utf-8');
-    const slug = slugify(file);
+  for (const rel of relFiles) {
+    const fullPath = join(sourcePath, rel);
+    let content = readFileSync(fullPath, 'utf-8');
+    const parsed = parseRelPath(rel);
+    const slug = parsed.slug;
+    const subcategory = parsed.subcategory;
+    importedSlugs.add(slug);
+
     const targetPath = join(CONTENT_DIR, `${slug}.md`);
 
-    // 已存在文件：默认跳过；--update 模式下保留原 frontmatter、只刷新正文
+    // 已存在：--update 模式只刷新正文；否则跳过
     if (existsSync(targetPath)) {
       if (!updateMode) {
-        console.log(`  ⏭  跳过（已存在）: ${slug}.md`);
+        console.log(`  ⏭  跳过（已存在）: ${slug}.md${subcategory ? ` [${subcategory}]` : ''}`);
         skipped++;
-        results.push({ file: slug, status: 'skipped' });
+        results.push({ file: slug, subcategory, status: 'skipped' });
         continue;
       }
 
@@ -177,51 +217,64 @@ function main() {
       const preservedFrontmatter = extractFrontmatterBlock(existing);
       const sourceBody = stripFrontmatter(content);
 
-      // 合并：保留原 frontmatter + 空行分隔 + 最新正文
       const merged = preservedFrontmatter.replace(/\n?$/, '\n') + '\n' + sourceBody;
       if (merged === existing) {
-        console.log(`  ⏭  无变化: ${slug}.md`);
+        console.log(`  ⏭  无变化: ${slug}.md${subcategory ? ` [${subcategory}]` : ''}`);
         skipped++;
-        results.push({ file: slug, status: 'unchanged' });
+        results.push({ file: slug, subcategory, status: 'unchanged' });
         continue;
       }
 
       writeFileSync(targetPath, merged, 'utf-8');
-      console.log(`  🔄 更新（保留原信息头）: ${slug}.md`);
-      imported++;
-      results.push({ file: slug, status: 'updated' });
+      console.log(`  🔄 更新（保留原信息头）: ${slug}.md${subcategory ? ` [${subcategory}]` : ''}`);
+      updated++;
+      results.push({ file: slug, subcategory, status: 'updated' });
       continue;
     }
 
-    // 新文件：补上 frontmatter
+    // 新文件：补上 frontmatter（subcategory 取自语雀目录层级）
     if (!hasFrontmatter(content)) {
-      const title = extractTitle(content, file);
+      const title = extractTitle(content, rel);
       const description = extractDescription(content);
-      const frontmatter = generateFrontmatter(title, description, game, today, []);
+      const frontmatter = generateFrontmatter(title, description, category, subcategory, today, []);
       content = frontmatter + content;
     }
 
     writeFileSync(targetPath, content, 'utf-8');
-    console.log(`  ✅ 导入: ${slug}.md`);
+    console.log(`  ✅ 导入: ${slug}.md${subcategory ? ` [${subcategory}]` : ''}`);
     imported++;
-    results.push({ file: slug, status: 'imported' });
+    results.push({ file: slug, subcategory, status: 'imported' });
+  }
+
+  // prune 模式：删除该分类下、不是 manual、且不在本次导入列表中的文件
+  let prunedCount = 0;
+  if (pruneMode) {
+    console.log(`\n🗑️   PRUNE 模式：清理 category=${category} 且语雀中已不存在的文章...`);
+    const existing = readdirSync(CONTENT_DIR).filter((f) => extname(f).toLowerCase() === '.md');
+    for (const f of existing) {
+      const slug = basename(f, '.md');
+      if (importedSlugs.has(slug)) continue; // 本次导入过，留
+      const targetPath = join(CONTENT_DIR, f);
+      const raw = readFileSync(targetPath, 'utf-8');
+      const meta = parseFrontmatter(raw);
+      if (meta.category !== category) continue; // 不是本次同步的分类，不管
+      if (meta.manual) {
+        console.log(`  🛡  保留（manual=true）: ${f}`);
+        continue;
+      }
+      unlinkSync(targetPath);
+      console.log(`  ❌ 删除: ${f}`);
+      prunedCount++;
+    }
   }
 
   console.log(`\n========================================`);
-  console.log(`✅ ${updateMode ? '同步' : '导入'}完成：${imported} 篇${updateMode ? '更新/新增' : '导入'}，${skipped} 篇跳过`);
+  console.log(`✅ 导入${imported} 篇，更新${updated} 篇，跳过${skipped} 篇${pruneMode ? `，删除${prunedCount} 篇` : ''}`);
   console.log(`========================================`);
-  if (!updateMode) {
-    console.log(`\n下一步：`);
-    console.log(`  1. 检查 src/content/guides/ 下的文件，按需修改 frontmatter 里的 title/tags/date`);
-    console.log(`  2. 如果有图片，把语雀的图片文件夹复制到 public/images/ 并修正路径`);
-    console.log(`  3. git add . && git commit -m "import: ${game} 攻略" && git push`);
-    console.log(`  4. 等 1-2 分钟，GitHub Actions 自动部署上线\n`);
-  }
 
-  // 输出 JSON 清单，方便程序化处理
   const reportPath = join(process.cwd(), 'import-report.json');
-  writeFileSync(reportPath, JSON.stringify({ game, date: today, results }, null, 2), 'utf-8');
-  console.log(`📋 导入清单已保存: ${reportPath}`);
+  writeFileSync(reportPath, JSON.stringify({ category, date: today, pruned: prunedCount, results }, null, 2), 'utf-8');
+  console.log(`\n📋 清单: ${reportPath}`);
 }
 
 main();

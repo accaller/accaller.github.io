@@ -1,7 +1,8 @@
 {
-  "$comment": "语雀自动同步配置（需语雀超级会员创建 API Token 后方可生效，暂不可用不影响手动更新）。当前板块：CS2、缺氧。",
-  "user": "yuqueyonghu-gwdsm5",
+  "$comment": "语雀自动同步配置。每个 repo 对应一个语雀知识库，映射到站点的一级分类（缺氧/CS）。知识库内部的目录名会自动作为二级分类。",
+  "user": "accall",
   "repos": [
-    { "repo": "zldo8a", "game": "CS2" }
+    { "repo": "缺氧", "category": "缺氧" },
+    { "repo": "CS",   "category": "CS" }
   ]
 }

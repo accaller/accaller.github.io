@@ -1,9 +1,11 @@
 ---
 title: CS2 Dust2 常用投掷物点位速查
 description: A 门烟、中门烟、B 区一线烟等 Dust2 高频道具的站位与准星参照，跑图前过一遍。
-game: CS2
+category: CS
+subcategory: 道具
 date: 2026-08-14
-tags: [道具, Dust2, 速查]
+tags: [Dust2, 速查]
+manual: true
 ---
 
 > 本篇是**示例攻略**（用真实游戏内容做的排版演示）。等你的语雀攻略导过来，直接替换这篇即可——排版效果和你现在看到的完全一致。

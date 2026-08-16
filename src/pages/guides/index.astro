@@ -10,64 +10,147 @@ const gradients = [
   'linear-gradient(135deg, #43e97b, #38f9d7)',
 ];
 
-// 全部攻略：置顶优先，其余按日期倒序
-const guides = (await getCollection('guides')).sort((a, b) => {
+const coverImages: Record<string, string> = {
+  '缺氧': '/images/category-oxygen.jpg',
+  'CS': '/images/category-cs.jpg',
+  '站点教程': '/images/category-gas-spring.jpg',
+  '气泉': '/images/category-gas-spring.jpg',
+  '水泉': '/images/category-water-spring.jpg',
+  '道具': '/images/category-utilities.jpg',
+  '站位': '/images/category-positioning.jpg',
+};
+
+const allGuides = (await getCollection('guides')).sort((a, b) => {
   if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
   return b.data.date.valueOf() - a.data.date.valueOf();
 });
 
-// 按游戏名分组（保持最近更新的游戏排前面）
-const byGame = new Map<string, typeof guides>();
-for (const g of guides) {
-  const list = byGame.get(g.data.game) ?? [];
-  list.push(g);
-  byGame.set(g.data.game, list);
+type SubDef = { name: string; key: string };
+type CatDef = {
+  name: string;
+  subcategories: SubDef[];
+  unsubLabel?: string;
+};
+
+const categoryOrder: CatDef[] = [
+  {
+    name: '缺氧',
+    subcategories: [
+      { name: '气泉', key: '气泉' },
+      { name: '水泉', key: '水泉' },
+    ],
+    unsubLabel: '其他',
+  },
+  {
+    name: 'CS',
+    subcategories: [
+      { name: '道具', key: '道具' },
+      { name: '站位', key: '站位' },
+    ],
+    unsubLabel: '其他',
+  },
+  {
+    name: '站点教程',
+    subcategories: [],
+  },
+];
+
+type Guide = typeof allGuides[number];
+
+function groupGuides(guides: Guide[]): Array<{
+  cat: CatDef;
+  guides: Guide[];
+  subgroups: Array<{ sub?: SubDef; guides: Guide[] }>;
+}> {
+  const result: ReturnType<typeof groupGuides> = [];
+  for (const cat of categoryOrder) {
+    const catGuides = guides.filter((g) => g.data.category === cat.name);
+    if (catGuides.length === 0) continue;
+
+    const subgroups: Array<{ sub?: SubDef; guides: Guide[] }> = [];
+    for (const sub of cat.subcategories) {
+      const list = catGuides.filter((g) => g.data.subcategory === sub.key);
+      if (list.length > 0) subgroups.push({ sub, guides: list });
+    }
+    const unsub = catGuides.filter((g) => !g.data.subcategory);
+    if (unsub.length > 0 && cat.unsubLabel) {
+      subgroups.push({ sub: { name: cat.unsubLabel, key: '' }, guides: unsub });
+    } else if (unsub.length > 0) {
+      subgroups.unshift({ guides: unsub });
+    }
+    result.push({ cat, guides: catGuides, subgroups });
+  }
+  return result;
 }
+
+const grouped = groupGuides(allGuides);
 ---
 
-<BaseLayout title="全部攻略 · 你的游戏名攻略站" description="按游戏分类的全部攻略文章">
-  <h1 class="section-title">全部攻略（{guides.length} 篇）</h1>
+<BaseLayout title="全部攻略 · acc攻略站" description="按分类分组的全部攻略文章">
+  <h1 class="section-title">全部攻略（{allGuides.length} 篇）</h1>
 
   {
-    guides.length === 0 ? (
+    allGuides.length === 0 ? (
       <div class="empty-tip">
         还没有攻略。在 <code>src/content/guides/</code> 里新建 .md 文件即可发布第一篇！
       </div>
     ) : (
-      [...byGame.entries()].map(([game, list]) => (
-        <section style="margin-bottom: 2.5rem;">
-          <h2 class="section-title" style="font-size: 1.2rem; display: flex; align-items: center; gap: 0.6rem;">
-            <span class="tag">{game}</span>
+      grouped.map(({ cat, guides, subgroups }) => (
+        <section id={cat.name} style="margin-bottom: 3rem; scroll-margin-top: 5rem;">
+          <h2 class="section-title" style="font-size: 1.35rem; display: flex; align-items: center; gap: 0.6rem;">
+            <span class="tag">{cat.name}</span>
             <span style="color: var(--color-text-light); font-size: 0.85rem; font-weight: 400;">
-              {list.length} 篇
+              {guides.length} 篇
             </span>
           </h2>
-          <div class="guides-grid">
-            {list.map((guide, i) => (
-              <a href={withBase(`/guides/${guide.id}/`)} class="guide-card">
-                <div
-                  class="guide-card-cover"
-                  style={`background:${guide.data.cover ? 'var(--color-alt-bg)' : gradients[i % gradients.length]}`}
-                >
-                  {guide.data.cover ? (
-                    <img src={guide.data.cover} alt={guide.data.title} loading="lazy" width="400" height="140" />
-                  ) : (
-                    <span>{guide.data.game}</span>
-                  )}
-                </div>
-                <div class="guide-card-body">
-                  <div class="guide-card-meta">
-                    <time datetime={guide.data.date.toISOString()}>
-                      {guide.data.date.toLocaleDateString('zh-CN')}
-                    </time>
-                    {guide.data.pinned && <span class="tag">置顶</span>}
-                  </div>
-                  <h3 class="guide-card-title">{guide.data.title}</h3>
-                  <p class="guide-card-desc">{guide.data.description}</p>
-                </div>
-              </a>
-            ))}
-          </div>
+
+          {subgroups.map(({ sub, guides: list }, si) => (
+            <section
+              id={sub ? `${cat.name}-${sub.name}` : undefined}
+              style="margin: 1.2rem 0 1.8rem 0.4rem; scroll-margin-top: 5rem;"
+            >
+              {sub && (
+                <h3 style="font-family: var(--font-mono); font-size: 1.05rem; margin-bottom: 0.9rem; color: var(--color-accent); display: flex; align-items: center; gap: 0.5rem;">
+                  <span class="tag tag--accent">{sub.name}</span>
+                  <span style="color: var(--color-text-dim); font-size: 0.8rem; font-weight: 400;">
+                    {list.length} 篇
+                  </span>
+                </h3>
+              )}
+              <div class="guides-grid">
+                {list.map((guide, i) => {
+                  const coverKey = guide.data.subcategory ?? guide.data.category;
+                  const cover = coverImages[coverKey];
+                  return (
+                    <a href={withBase(`/guides/${guide.id}/`)} class="guide-card">
+                      <div
+                        class="guide-card-cover"
+                        style={`background:${guide.data.cover ? 'var(--color-surface-light)' : gradients[(si + i) % gradients.length]}`}
+                      >
+                        {guide.data.cover ? (
+                          <img src={guide.data.cover} alt={guide.data.title} loading="lazy" width="400" height="140" />
+                        ) : cover ? (
+                          <img src={cover} alt={guide.data.title} loading="lazy" width="400" height="140" style="width:100%;height:100%;object-fit:cover;" />
+                        ) : (
+                          <span>{sub?.name ?? guide.data.category}</span>
+                        )}
+                      </div>
+                      <div class="guide-card-body">
+                        <div class="guide-card-meta">
+                          <time datetime={guide.data.date.toISOString()}>
+                            {guide.data.date.toLocaleDateString('zh-CN')}
+                          </time>
+                          {guide.data.pinned && <span class="tag">置顶</span>}
+                        </div>
+                        <h3 class="guide-card-title">{guide.data.title}</h3>
+                        <p class="guide-card-desc">{guide.data.description}</p>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </section>
       ))
     )

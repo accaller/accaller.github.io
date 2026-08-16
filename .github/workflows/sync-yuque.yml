@@ -1,0 +1,45 @@
+name: Sync from Yuque
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync from Yuque (public, no token needed)
+        run: node scripts/sync-yuque-public.mjs
+
+      - name: Build site
+        run: npm install && npm run build
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet && git status --porcelain | grep -q .; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: sync from Yuque ($(date -u +%Y-%m-%d))"
+          git push

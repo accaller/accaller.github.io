@@ -15,12 +15,13 @@ const { guide } = Astro.props;
 const { Content } = await render(guide);
 ---
 
-<BaseLayout title={`${guide.data.title} · 攻略`} description={guide.data.description}>
+<BaseLayout title={`${guide.data.title} · acc攻略站`} description={guide.data.description}>
   <article>
     <header class="post-header">
       <h1>{guide.data.title}</h1>
       <div class="post-meta">
-        <span class="tag">{guide.data.game}</span>
+        <span class="tag">{guide.data.category}</span>
+        {guide.data.subcategory && <span class="tag tag--accent">{guide.data.subcategory}</span>}
         <time datetime={guide.data.date.toISOString()}>
           发布于 {guide.data.date.toLocaleDateString('zh-CN')}
         </time>

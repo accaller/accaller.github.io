@@ -1,10 +1,11 @@
 ---
 title: 如何在本站发布一篇新攻略（写给站长自己看的教程）
 description: 从新建文件到自动上线，1 分钟发布一篇攻略的完整流程。
-game: 站点教程
+category: 站点教程
 date: 2026-08-15
 tags: [教程, 必读]
 pinned: true
+manual: true
 ---
 
 恭喜！你现在看到的这篇文章，就是一篇攻略的标准样子。发布新攻略只需两步：
@@ -19,7 +20,8 @@ pinned: true
 ---
 title: 攻略标题（必填）
 description: 一句话摘要，显示在列表卡片和搜索引擎里（必填）
-game: 游戏名，如 塞尔达传说（必填，用于自动分组）
+category: 缺氧 | CS | 站点教程（必填，一级分类）
+subcategory: 气泉 | 水泉 | 道具 | 站位（可选，二级分类：缺氧→气泉/水泉，CS→道具/站位）
 date: 2026-08-15（必填，发布日期）
 tags: [新手, BOSS]（可选，标签）
 cover: /images/cover.jpg（可选，封面图）
