@@ -1,0 +1,106 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { withBase } from '../utils';
+import { works } from '../data/works';
+
+// 取最新 4 篇攻略（置顶优先，其余按日期倒序）
+const guides = (await getCollection('guides')).sort((a, b) => {
+  if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
+  return b.data.date.valueOf() - a.data.date.valueOf();
+});
+const latestGuides = guides.slice(0, 4);
+
+// 封面渐变占位色（无封面图时轮换使用）
+const gradients = [
+  'linear-gradient(135deg, #667eea, #764ba2)',
+  'linear-gradient(135deg, #f093fb, #f5576c)',
+  'linear-gradient(135deg, #4facfe, #00f2fe)',
+  'linear-gradient(135deg, #43e97b, #38f9d7)',
+];
+---
+
+<BaseLayout title="缺氧·攻略站 · CS2 与缺氧攻略及作品展示">
+  <!-- Hero -->
+  <section class="hero">
+    <h1>欢迎来到<span class="highlight">缺氧·攻略站</span></h1>
+    <p>CS2 · 缺氧 · 更多游戏持续更新中</p>
+    <a href={withBase('/guides/')} class="btn-primary">浏览全部攻略 →</a>
+  </section>
+
+  <!-- 最新攻略 -->
+  <section>
+    <h2 class="section-title">最新攻略</h2>
+    {
+      latestGuides.length === 0 ? (
+        <div class="empty-tip">
+          还没有攻略。在 <code>src/content/guides/</code> 里新建一个 .md 文件试试！
+        </div>
+      ) : (
+        <div class="guides-grid">
+          {latestGuides.map((guide, i) => (
+            <a href={withBase(`/guides/${guide.id}/`)} class="guide-card">
+              <div
+                class="guide-card-cover"
+                style={`background:${guide.data.cover ? 'var(--color-alt-bg)' : gradients[i % gradients.length]}`}
+              >
+                {guide.data.cover ? (
+                  <img src={guide.data.cover} alt={guide.data.title} loading="lazy" width="400" height="140" />
+                ) : (
+                  <span>{guide.data.game}</span>
+                )}
+              </div>
+              <div class="guide-card-body">
+                <div class="guide-card-meta">
+                  <span class="tag">{guide.data.game}</span>
+                  <time datetime={guide.data.date.toISOString()}>
+                    {guide.data.date.toLocaleDateString('zh-CN')}
+                  </time>
+                </div>
+                <h3 class="guide-card-title">{guide.data.title}</h3>
+                <p class="guide-card-desc">{guide.data.description}</p>
+              </div>
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </section>
+
+  <!-- 作品精选 -->
+  <section style="margin-top: 4rem;">
+    <h2 class="section-title">作品精选</h2>
+    <div class="works-grid">
+      {
+        works.slice(0, 3).map((work) => (
+          <article class="work-card">
+            <div class="work-thumb" style={`background:${work.gradient ?? 'var(--color-primary-light)'}`}>
+              {work.image ? <img src={work.image} alt={work.title} loading="lazy" width="400" height="150" /> : work.title}
+            </div>
+            <h3 class="work-title">{work.title}</h3>
+            <p class="work-desc">{work.description}</p>
+            {work.link && (
+              <a href={work.link} target="_blank" rel="noopener" class="work-link">
+                查看详情 →
+              </a>
+            )}
+          </article>
+        ))
+      }
+    </div>
+    <p style="text-align:center; margin-top: 1.5rem;">
+      <a href={withBase('/works/')}>查看全部作品 →</a>
+    </p>
+  </section>
+
+  <!-- 关于 -->
+  <section id="about" style="margin-top: 4rem;">
+    <h2 class="section-title">关于我</h2>
+    <blockquote class="prose" style="border-left: 4px solid var(--color-primary); padding: 1rem 1.2rem; background: var(--color-alt-bg); border-radius: 0 12px 12px 0;">
+      <p>
+        把这段话换成你的自我介绍：玩什么游戏、擅长什么（速通/攻略/剪辑/MOD）、
+        这个站用来做什么。两三句话就够，重要的是让人记住你。
+      </p>
+    </blockquote>
+  </section>
+</BaseLayout>
