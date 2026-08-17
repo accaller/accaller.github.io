@@ -38,18 +38,21 @@
   --max-width: 880px;
   --transition: 0.2s ease;
 
-  --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Source Code Pro',
-    Consolas, 'Courier New', monospace;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, 'Cascadia Code',
+    'Fira Code', monospace;
+  /* 语雀风格字体栈：英文优先 system-ui，中文用 PingFang/微软雅黑 */
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB',
+    sans-serif;
 }
 
 /* ==================== 全局 ==================== */
 body {
   font-family: var(--font-body);
   background: var(--color-bg);
-  color: var(--color-text);
-  line-height: 1.7;
+  color: #262626;
+  font-size: 16px;
+  line-height: 1.75;
   background-image:
     radial-gradient(circle at 20% 50%, rgba(37, 99, 235, 0.04) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.03) 0%, transparent 50%);
@@ -338,28 +341,37 @@ img {
   font-size: 0.85rem;
 }
 
-/* ==================== 攻略正文排版 ==================== */
+/* ==================== 攻略正文排版（对齐语雀风格） ==================== */
 .prose {
-  font-size: 0.95rem;
-  color: var(--color-text);
+  font-size: 16px;
+  color: #262626;
+  line-height: 1.75;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-family: var(--font-body);
+  color: #262626;
+  font-weight: 600;
 }
 
 .prose h2 {
-  font-family: var(--font-mono);
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin: 2.2rem 0 0.8rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 2px solid var(--color-border-light);
-  color: var(--color-primary);
+  font-size: 1.4rem;
+  margin: 2.2rem 0 0.9rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid #e8e8e8;
 }
 
 .prose h3 {
-  font-family: var(--font-mono);
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 1.6rem 0 0.6rem;
-  color: var(--color-accent);
+  font-size: 1.2rem;
+  margin: 1.6rem 0 0.7rem;
+}
+
+.prose h4 {
+  font-size: 1.05rem;
+  margin: 1.3rem 0 0.6rem;
 }
 
 .prose p {
@@ -378,40 +390,39 @@ img {
 .prose table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1.2rem 0;
-  font-size: 0.9rem;
+  margin: 1.4rem 0;
+  font-size: 15px;
   display: block;
   overflow-x: auto;
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius);
+  border: none;
 }
 
 .prose th,
 .prose td {
-  border: 1px solid var(--color-border-light);
-  padding: 0.5rem 0.75rem;
+  border: 1px solid #dfe2e5;
+  padding: 0.6rem 0.9rem;
   text-align: left;
 }
 
 .prose th {
-  background: var(--color-surface-light);
-  font-family: var(--font-mono);
+  background: #f6f8fa;
+  font-family: var(--font-body);
   font-weight: 600;
-  color: var(--color-primary);
-  font-size: 0.85rem;
+  color: #262626;
+  font-size: 15px;
 }
 
-.prose tbody tr:hover {
-  background: var(--color-surface-light);
+.prose tbody tr:nth-child(even) {
+  background: #fafbfc;
 }
 
 .prose blockquote {
   margin: 1.2rem 0;
-  padding: 0.8rem 1.1rem;
-  border-left: 4px solid var(--color-accent);
-  background: var(--color-surface-light);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  color: var(--color-text-light);
+  padding: 0.4rem 1rem;
+  border-left: 4px solid #dfe2e5;
+  background: transparent;
+  border-radius: 0;
+  color: #6b6b7b;
 }
 
 .prose blockquote p:last-child {
@@ -419,37 +430,56 @@ img {
 }
 
 .prose code {
-  background: var(--color-code-bg);
-  padding: 0.15rem 0.4rem;
-  border-radius: var(--radius);
+  background: rgba(135, 131, 120, 0.15);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
   font-family: var(--font-mono);
-  font-size: 0.85em;
-  color: var(--color-primary);
-  border: 1px solid var(--color-border-light);
+  font-size: 0.88em;
+  color: #262626;
+  border: none;
 }
 
 .prose pre {
-  background: var(--color-code-bg);
+  background: #f6f8fa;
   padding: 1rem;
-  border-radius: var(--radius);
+  border-radius: 6px;
   overflow-x: auto;
   margin: 1.2rem 0;
-  border: 2px solid var(--color-border);
+  border: none;
 }
 
 .prose pre code {
   background: none;
   padding: 0;
   border: none;
-  color: var(--color-text);
+  color: #262626;
+  font-size: 0.9em;
 }
 
-.prose img {
-  margin: 1.2rem 0;
+.prose figure {
+  margin: 1.4rem 0;
+  text-align: center;
+}
+
+.prose figure img {
   width: 100%;
-  border: 2px solid var(--color-border-light);
   border-radius: var(--radius);
   display: block;
+}
+
+.prose figcaption {
+  margin-top: 0.5rem;
+  font-size: 14px;
+  color: #999;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* 行内图片（不在 figure 里的）兜底样式 */
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
 }
 
 /* ==================== 文章头部信息 ==================== */
