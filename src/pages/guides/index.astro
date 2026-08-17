@@ -3,22 +3,25 @@ import { getCollection } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { withBase } from '../../utils';
 
-const gradients = [
-  'linear-gradient(135deg, #667eea, #764ba2)',
-  'linear-gradient(135deg, #f093fb, #f5576c)',
-  'linear-gradient(135deg, #4facfe, #00f2fe)',
-  'linear-gradient(135deg, #43e97b, #38f9d7)',
-];
-
-const coverImages: Record<string, string> = {
-  '缺氧': '/images/category-oxygen.jpg',
-  'CS': '/images/category-cs.jpg',
-  '站点教程': '/images/category-gas-spring.jpg',
-  '气泉': '/images/category-gas-spring.jpg',
-  '水泉': '/images/category-water-spring.jpg',
-  '道具': '/images/category-utilities.jpg',
-  '站位': '/images/category-positioning.jpg',
+// 每个 subcategory 的封面颜色方案（渐变背景 + 文字颜色）
+// 同一子分类下所有文档共享同一配色
+const coverPalette: Record<string, { bg: string; text: string }> = {
+  '气泉':   { bg: 'linear-gradient(135deg, #11998e, #38ef7d)', text: '#fff' },
+  '水泉':   { bg: 'linear-gradient(135deg, #2193b0, #6dd5ed)', text: '#fff' },
+  '工业':   { bg: 'linear-gradient(135deg, #667eea, #764ba2)', text: '#fff' },
+  '农牧':   { bg: 'linear-gradient(135deg, #f7971e, #ffd200)', text: '#fff' },
+  '道具':   { bg: 'linear-gradient(135deg, #f093fb, #f5576c)', text: '#fff' },
+  '站位':   { bg: 'linear-gradient(135deg, #4facfe, #00f2fe)', text: '#fff' },
+  '站点教程': { bg: 'linear-gradient(135deg, #434343, #000)', text: '#fff' },
+  '缺氧':   { bg: 'linear-gradient(135deg, #667eea, #764ba2)', text: '#fff' },
+  'CS':     { bg: 'linear-gradient(135deg, #f5576c, #f093fb)', text: '#fff' },
 };
+
+function getCoverStyle(category: string, subcategory?: string) {
+  const key = subcategory || category;
+  const c = coverPalette[key] || coverPalette[category] || { bg: 'linear-gradient(135deg,#667eea,#764ba2)', text: '#fff' };
+  return `background:${c.bg};color:${c.text};`;
+}
 
 const allGuides = (await getCollection('guides')).sort((a, b) => {
   if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
@@ -133,36 +136,25 @@ const grouped = groupGuides(allGuides);
                 </h3>
               )}
               <div class="guides-grid">
-                {list.map((guide, i) => {
-                  const coverKey = guide.data.subcategory ?? guide.data.category;
-                  const cover = coverImages[coverKey];
-                  return (
-                    <a href={withBase(`/guides/${guide.id}/`)} class="guide-card">
-                      <div
-                        class="guide-card-cover"
-                        style={`background:${guide.data.cover ? 'var(--color-surface-light)' : gradients[(si + i) % gradients.length]}`}
-                      >
-                        {guide.data.cover ? (
-                          <img src={guide.data.cover} alt={guide.data.title} loading="lazy" width="400" height="140" />
-                        ) : cover ? (
-                          <img src={cover} alt={guide.data.title} loading="lazy" width="400" height="140" style="width:100%;height:100%;object-fit:cover;" />
-                        ) : (
-                          <span>{sub?.name ?? guide.data.category}</span>
-                        )}
+                {list.map((guide) => (
+                  <a href={withBase(`/guides/${guide.id}/`)} class="guide-card">
+                    <div
+                      class="guide-card-cover"
+                      style={getCoverStyle(guide.data.category, guide.data.subcategory)}
+                    >
+                      <span class="guide-cover-title">{guide.data.title}</span>
+                    </div>
+                    <div class="guide-card-body">
+                      <div class="guide-card-meta">
+                        <time datetime={guide.data.date.toISOString()}>
+                          {guide.data.date.toLocaleDateString('zh-CN')}
+                        </time>
+                        {guide.data.pinned && <span class="tag">置顶</span>}
                       </div>
-                      <div class="guide-card-body">
-                        <div class="guide-card-meta">
-                          <time datetime={guide.data.date.toISOString()}>
-                            {guide.data.date.toLocaleDateString('zh-CN')}
-                          </time>
-                          {guide.data.pinned && <span class="tag">置顶</span>}
-                        </div>
-                        <h3 class="guide-card-title">{guide.data.title}</h3>
-                        <p class="guide-card-desc">{guide.data.description}</p>
-                      </div>
-                    </a>
-                  );
-                })}
+                      <h3 class="guide-card-title">{guide.data.title}</h3>
+                    </div>
+                  </a>
+                ))}
               </div>
             </section>
           ))}
