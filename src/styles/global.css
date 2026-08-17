@@ -456,30 +456,28 @@ img {
   font-size: 0.9em;
 }
 
+/* 所有图片统一宽度：撑满正文容器，窄图会等比拉大，视觉上和语雀截图一样整齐 */
+.prose img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  display: block;
+  margin: 1.1rem 0 0.3rem;
+}
+
+/* 保留 figure 布局以防手写（目前 rehype 不自动生成） */
 .prose figure {
   margin: 1.4rem 0;
   text-align: center;
 }
-
-.prose figure img {
-  width: 100%;
-  border-radius: var(--radius);
-  display: block;
-}
-
+.prose figure img { margin: 0; }
 .prose figcaption {
   margin-top: 0.5rem;
   font-size: 14px;
   color: #999;
   text-align: center;
   line-height: 1.6;
-}
-
-/* 行内图片（不在 figure 里的）兜底样式 */
-.prose img {
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--radius);
 }
 
 /* ==================== 文章头部信息 ==================== */

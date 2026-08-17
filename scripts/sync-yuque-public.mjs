@@ -292,30 +292,61 @@ function lakeToMarkdown(lakeHtml) {
   md = md.replace(/<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)"[^>]*\/?\s*>/gi, '\n\n![$2]($1)\n\n');
   md = md.replace(/<img[^>]*src="([^"]+)"[^>]*\/?\s*>/gi, '\n\n![image]($1)\n\n');
 
-  // 处理标题
-  md = md.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n\n# $1\n\n');
-  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n\n## $1\n\n');
-  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n\n### $1\n\n');
-  md = md.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '\n\n#### $1\n\n');
+  // 处理标题（保留原始属性，比如 style="text-align:center;color:red"，
+  // 因为 markdown 的 # 语法无法表达内联样式）
+  md = md.replace(/<(h[1-4])\b([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => {
+    const styleAttr = (attrs.match(/\bstyle="([^"]*)"/i) || [])[1] || '';
+    if (!styleAttr) {
+      const map = { h1: '#', h2: '##', h3: '###', h4: '####' };
+      return `\n\n${map[tag.toLowerCase()]} ${content}\n\n`;
+    }
+    // 有样式（对齐/颜色等）→ 保留原生 HTML 标签
+    return `\n\n<${tag}${attrs}>${content}</${tag}>\n\n`;
+  });
 
   // 处理列表
   md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
   md = md.replace(/<\/?(ul|ol)[^>]*>/gi, '\n');
 
-  // 处理加粗/斜体
-  md = md.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
-  md = md.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
-  md = md.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*');
-  md = md.replace(/<i[^>]*>([\s\S]*?)<\/i>/gi, '*$1*');
+  // 处理加粗/斜体（无自定义样式时用 markdown 语法；有 color 等自定义样式时保留标签）
+  function preserveOrSimplify(openTag, attrs, inner, closeTag, mdWrap) {
+    const styleAttr = (attrs.match(/\bstyle="([^"]*)"/i) || [])[1] || '';
+    // 仅「标准加粗 / 标准斜体」简化成 markdown 语法
+    const isPureBold = /^\s*font-weight\s*:\s*(bold|700|600)\s*;?\s*$/i.test(styleAttr);
+    const isPureItalic = /^\s*font-style\s*:\s*italic\s*;?\s*$/i.test(styleAttr);
+    // 有 style 但不是纯净的粗/斜 → 保留标签（可能带颜色）
+    if (styleAttr && !isPureBold && !isPureItalic) {
+      return `<${openTag}${attrs}>${inner}</${closeTag}>`;
+    }
+    if (isPureBold) return `**${inner}**`;
+    if (isPureItalic) return `*${inner}*`;
+    return `${mdWrap}${inner}${mdWrap}`;
+  }
+  md = md.replace(/<(strong)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (_, tag, attrs, inner) => preserveOrSimplify(tag, attrs, inner, tag, '**'));
+  md = md.replace(/<(b)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (_, tag, attrs, inner) => preserveOrSimplify(tag, attrs, inner, tag, '**'));
+  md = md.replace(/<(em)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (_, tag, attrs, inner) => preserveOrSimplify(tag, attrs, inner, tag, '*'));
+  md = md.replace(/<(i)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (_, tag, attrs, inner) => preserveOrSimplify(tag, attrs, inner, tag, '*'));
 
-  // 处理链接
-  md = md.replace(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
+  // 处理链接（丢弃 onclick、自定义 style 等可能带 color 的属性，保留 href）
+  md = md.replace(/<a\b[^>]*?href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
 
-  // 处理段落
-  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '$1\n\n');
+  // 处理段落（有 style= 就保留 HTML 标签 + 属性（居中、颜色等），否则输出纯文本）
+  md = md.replace(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi, (match, attrs, content) => {
+    const styleAttr = (attrs.match(/\bstyle="([^"]*)"/i) || [])[1] || '';
+    const alignAttr = (attrs.match(/\balign="([^"]*)"/i) || [])[1] || '';
+    if (!styleAttr && !alignAttr) {
+      return `${content}\n\n`;
+    }
+    // 有样式/对齐 → 保留 <p> 标签原样输出（markdown 内嵌 HTML 合法）
+    return `<p${attrs}>${content}</p>\n\n`;
+  });
 
-  // 处理 span：提取内容，丢弃样式
-  md = md.replace(/<span[^>]*>([\s\S]*?)<\/span>/gi, '$1');
+  // 处理 span（有 style= 就保留，否则丢弃标签抽内容）
+  md = md.replace(/<span\b([^>]*)>([\s\S]*?)<\/span>/gi, (match, attrs, content) => {
+    const styleAttr = (attrs.match(/\bstyle="([^"]*)"/i) || [])[1] || '';
+    if (!styleAttr) return content;
+    return `<span${attrs}>${content}</span>`;
+  });
 
   // 处理换行
   md = md.replace(/<br\s*\/?>/gi, '\n');
@@ -326,10 +357,27 @@ function lakeToMarkdown(lakeHtml) {
     return '\n' + content.trim().split('\n').map((l) => '> ' + l).join('\n') + '\n\n';
   });
 
-  // 去掉剩余 HTML 标签
+  // 去掉 div 层（段落的承载容器，无样式价值）
   md = md.replace(/<div[^>]*>/gi, '\n');
   md = md.replace(/<\/div>/gi, '\n');
-  md = md.replace(/<[^>]+>/g, '');
+
+  // 去掉「纯语雀内部标记属性」（data-lake-id、id 等）但保留 style / align / class，
+  // 否则 `<[^>]+>` 兜底会把它们连同内容一起删
+  md = md.replace(/\b(?:data-lake-id|id)="[^"]*"\s*/gi, '');
+
+  // 剩下真正需要清除的是：<card ...>、<img ... />（这些已经在前面提取为 markdown 了）、
+  // 以及其他语雀私有标签。但「p/span/b/strong/em/i/h[1-4]/blockquote/br/hr/a」等
+  // 前面的转换保留了 style 属性，不能删掉。
+  // 策略：「白名单」标签及其闭合标签保留，其他标签全部删除。
+  //        白名单标签是我们可能保留 style/align 的标签集合。
+  const KEEP = /^\/?(?:p|span|b|strong|em|i|h[1-4]|blockquote|br|hr|a|u|s|del|ins|code|pre|sup|sub|figure|figcaption)\b/i;
+  md = md.replace(/<\/?[^>]+>/g, (match) => {
+    const core = match.replace(/^<\/?/, '').replace(/\s.*$/s, '').replace(/>$/, '');
+    const tag = match.replace(/^<\s*\/?/, '').split(/[\s/>]/)[0];
+    // 匹配白名单（允许带属性：如 <p style="...">）
+    if (KEEP.test(match.slice(1))) return match;
+    return '';
+  });
 
   // HTML 实体解码
   md = md.replace(/&amp;/g, '&');
