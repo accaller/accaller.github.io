@@ -446,8 +446,10 @@ img {
 
 .prose img {
   margin: 1.2rem 0;
+  width: 100%;
   border: 2px solid var(--color-border-light);
   border-radius: var(--radius);
+  display: block;
 }
 
 /* ==================== 文章头部信息 ==================== */
