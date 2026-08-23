@@ -1,8 +1,9 @@
 name: Sync from Yuque
 
 on:
+  # 每 30 分钟同步一次（UTC 0/30 分 = 北京时间 8:xx 的 0/30 分）
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -29,13 +30,10 @@ jobs:
       - name: Compress images to WebP (fallback for legacy PNGs)
         run: node scripts/compress-images.mjs
 
-      - name: Build site
-        run: npm run build
-
-      - name: Check for changes
+      - name: Check for changes (modified / new / deleted files)
         id: changes
         run: |
-          if git diff --quiet && git status --porcelain | grep -q .; then
+          if git status --porcelain | grep -q .; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -47,5 +45,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: sync from Yuque ($(date -u +%Y-%m-%d))"
+          git commit -m "chore: sync from Yuque ($(date -u +%Y-%m-%dT%H:%MZ))"
           git push
+
