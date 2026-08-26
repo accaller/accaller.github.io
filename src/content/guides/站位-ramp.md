@@ -2,7 +2,7 @@
 title: ramp
 description: 瞄点为-3x的-
 category: CS
-subcategory: nuke T
+subcategory: 站位
 date: 2026-08-25
 tags: []
 yuque_url: https://www.yuque.com/yuqueyonghu-gwdsm5/ba0gpq/gyaa5hvuq6m8in93

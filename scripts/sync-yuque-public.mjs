@@ -34,6 +34,25 @@ const IMAGE_WEB_PREFIX = '/images/yuque/';
 const IMG_MAX_WIDTH = 1024;
 const IMG_WEBP_QUALITY = 80;
 
+// subcategory 别名映射：如果语雀目录名希望被归到另一个子分类下，写在这里
+// 例：语雀把"火箭"文件夹与"工业"同级，但希望网站上火箭文章显示在工业分组
+const SUBCATEGORY_ALIAS = {
+  '火箭': '工业',
+  '火箭发射': '工业',
+  '航天': '工业',
+  // CS 侧：语雀按地图建的目录统一映射到道具/站位
+  'nuke T': '站位',
+  'Nuke T': '站位',
+  'nuke道具': '道具',
+  'Nuke道具': '道具',
+  '守包火': '站位',
+  '抢中': '站位',
+  'A爆弹': '道具',
+  'B爆弹': '道具',
+  '闪': '道具',
+  '外场烟': '道具',
+};
+
 // ==================== HTTP 工具 ====================
 
 async function fetchText(url, headers = {}) {
@@ -124,7 +143,11 @@ function buildTocTree(toc) {
     if (item.type !== 'DOC') continue;
     // 不再跳过 visible=0 的文档（可能是草稿或隐藏文档，仍然尝试同步）
     const parentUuid = item.parent_uuid || '';
-    const subcategory = titleMap[parentUuid] || ''; // 父 TITLE 节点 = subcategory
+    let subcategory = titleMap[parentUuid] || ''; // 父 TITLE 节点 = subcategory
+    // 应用别名映射（语雀目录名 → 网站实际子分类）
+    if (subcategory && SUBCATEGORY_ALIAS[subcategory]) {
+      subcategory = SUBCATEGORY_ALIAS[subcategory];
+    }
     docs.push({
       title: item.title,
       slug: item.url, // 语雀文档的 slug
