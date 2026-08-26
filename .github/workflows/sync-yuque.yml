@@ -1,4 +1,4 @@
-name: Sync from Yuque
+name: Sync from Yuque and Deploy
 
 on:
   # 每 30 分钟同步一次（UTC 0/30 分 = 北京时间 8:xx 的 0/30 分）
@@ -8,13 +8,27 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  sync:
+  sync-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
+      - name: Checkout (full history, safe for push/pull)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -23,6 +37,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Pull latest main (avoid fast-forward push failure)
+        run: git pull --rebase origin main || true
 
       - name: Sync from Yuque (public, no token needed)
         run: node scripts/sync-yuque-public.mjs
@@ -39,6 +56,8 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
+      # 注意：GITHUB_TOKEN 执行的 git push 不会触发其他 workflow（官方限制）
+      # 所以 Sync 和 Deploy 合并在同一个 workflow 里
       - name: Commit and push
         if: steps.changes.outputs.changed == 'true'
         run: |
@@ -46,5 +65,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "chore: sync from Yuque ($(date -u +%Y-%m-%dT%H:%MZ))"
-          git push
+          git push origin main
 
+      # 无论是否有内容变更，都构建 + 部署最新 main（避免 Actions 缓存/构建产物缺失导致网站不更新）
+      - name: Build with Astro
+        uses: withastro/action@v3
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
