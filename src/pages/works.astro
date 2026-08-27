@@ -1,36 +1,59 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { works } from '../data/works';
+import { works, workCategories } from '../data/works';
+
+// 每个分类的封面渐变色
+const catPalette: Record<string, string> = {
+  'CS':   'linear-gradient(135deg, #f5576c, #f093fb)',
+  '缺氧': 'linear-gradient(135deg, #06b6d4, #3b82f6)',
+  '星露谷': 'linear-gradient(135deg, #11998e, #38ef7d)',
+};
+
+// 按 workCategories 顺序分组
+const grouped = workCategories
+  .map((cat) => ({ cat, list: works.filter((w) => w.category === cat) }))
+  .filter((g) => g.list.length > 0);
 ---
 
 <BaseLayout title="作品展示 · acc攻略站" description="游戏相关作品：剪辑、MOD、关卡设计等">
   <h1 class="section-title">作品展示（{works.length} 件）</h1>
 
-  <div class="works-grid">
-    {
-      works.map((work) => (
-        <article class="work-card">
-          <div class="work-thumb" style={`background:${work.gradient ?? 'var(--color-primary-light)'}`}>
-            {work.image ? (
-              <img src={work.image} alt={work.title} loading="lazy" width="400" height="150" />
-            ) : (
-              work.title
-            )}
-          </div>
-          <h3 class="work-title">{work.title}</h3>
-          <p class="work-desc">{work.description}</p>
-          <div style="margin: 0 1rem 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            {work.tags.map((t) => (
-              <span class="tag">{t}</span>
-            ))}
-          </div>
-          {work.link && (
-            <a href={work.link} target="_blank" rel="noopener" class="work-link">
-              查看详情 →
-            </a>
-          )}
-        </article>
-      ))
-    }
-  </div>
+  {
+    grouped.map(({ cat, list }) => (
+      <section id={cat} style="margin-bottom: 3rem; scroll-margin-top: 5rem;">
+        <h2 class="section-title" style="font-size: 1.35rem; display: flex; align-items: center; gap: 0.6rem;">
+          <span class="tag" style={`background:${catPalette[cat] ?? 'var(--color-primary)'};color:#fff;`}>{cat}</span>
+          <span style="color: var(--color-text-light); font-size: 0.85rem; font-weight: 400;">
+            {list.length} 件
+          </span>
+        </h2>
+
+        <div class="works-grid">
+          {list.map((work) => (
+            <article class="work-card">
+              <div class="work-thumb" style={`background:${work.gradient ?? catPalette[work.category] ?? 'var(--color-primary-light)'}`}>
+                {work.image ? (
+                  <img src={work.image} alt={work.title} loading="lazy" width="400" height="150" />
+                ) : (
+                  work.title
+                )}
+              </div>
+              <h3 class="work-title">{work.title}</h3>
+              <p class="work-desc">{work.description}</p>
+              <div style="margin: 0 1rem 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                {work.tags.map((t) => (
+                  <span class="tag">{t}</span>
+                ))}
+              </div>
+              {work.link && (
+                <a href={work.link} target="_blank" rel="noopener" class="work-link">
+                  查看详情 →
+                </a>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+    ))
+  }
 </BaseLayout>
