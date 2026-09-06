@@ -1,0 +1,79 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../utils';
+import { works } from '../../data/works';
+
+const guidesCount = (await getCollection('guides')).length;
+const worksCount = works.length;
+
+// 两大子入口：攻略 + 作品
+const guidesCard = {
+  desc: '按分类分组的全部攻略文章',
+  href: withBase('/guides/'),
+  badge: '缺氧 / CS',
+};
+const worksCard = {
+  desc: '游戏相关作品：剪辑、MOD、关卡设计等',
+  href: withBase('/works/'),
+  badge: 'CS / 缺氧 / 星露谷',
+};
+---
+
+<BaseLayout
+  title="game · 游戏攻略与作品"
+  description="acc 的游戏攻略与作品展示汇总区"
+>
+  <!-- 顶部 banner：用真实封面图 -->
+  <div style="width:100%;height:260px;overflow:hidden;border-radius:14px;margin-bottom:1.5rem;">
+    <img
+      src={withBase('/images/game/cover.png')}
+      alt="game 区封面"
+      width="1200"
+      height="260"
+      loading="eager"
+      style="width:100%;height:100%;object-fit:cover;display:block;"
+    />
+  </div>
+
+  <h1 class="section-title" style="margin-top:0;">game</h1>
+  <p style="color:var(--color-text-light);margin-top:-0.4rem;">
+    游戏攻略与作品展示的统一入口。
+  </p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-top:1.5rem;">
+    <article class="work-card">
+      <a href={guidesCard.href} style="text-decoration:none;color:inherit;">
+        <div class="work-thumb" style="background:linear-gradient(135deg, #667eea, #764ba2);height:170px;">
+          <span style="font-size:1.6rem;color:#fff;font-weight:500;letter-spacing:0.05em;">
+            攻略
+          </span>
+        </div>
+        <h3 class="work-title">
+          攻略 <span class="tag">{guidesCount} 篇</span>
+        </h3>
+        <p class="work-desc">{guidesCard.desc}</p>
+      </a>
+      <div style="margin:0 1rem 1rem;">
+        <span class="tag tag--accent">{guidesCard.badge}</span>
+      </div>
+    </article>
+
+    <article class="work-card">
+      <a href={worksCard.href} style="text-decoration:none;color:inherit;">
+        <div class="work-thumb" style="background:linear-gradient(135deg, #f093fb, #f5576c);height:170px;">
+          <span style="font-size:1.6rem;color:#fff;font-weight:500;letter-spacing:0.05em;">
+            作品展示
+          </span>
+        </div>
+        <h3 class="work-title">
+          作品展示 <span class="tag">{worksCount} 件</span>
+        </h3>
+        <p class="work-desc">{worksCard.desc}</p>
+      </a>
+      <div style="margin:0 1rem 1rem;">
+        <span class="tag tag--accent">{worksCard.badge}</span>
+      </div>
+    </article>
+  </div>
+</BaseLayout>

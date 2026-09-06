@@ -1,0 +1,102 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { learning } from '../../data/learning';
+import { withBase } from '../../utils';
+
+export async function getStaticPaths() {
+  return learning.map((item) => ({
+    params: { slug: item.slug },
+    props: { item },
+  }));
+}
+
+const { item } = Astro.props;
+const langPalette: Record<string, string> = {
+  Python: 'linear-gradient(135deg, #E6F1FB, #B5D4F4)',
+  JavaScript: 'linear-gradient(135deg, #FAEEDA, #FAC775)',
+  HTML: 'linear-gradient(135deg, #EEEDFE, #AFA9EC)',
+};
+const cover = item.gradient ?? langPalette[item.lang] ?? 'var(--color-primary-light)';
+// 下载列表：优先 downloads 数组（可多按钮），否则退回旧 file 单字段
+const downloads = (item.downloads && item.downloads.length > 0)
+  ? item.downloads
+  : (item.file ? [{ label: '下载压缩包', url: item.file, size: item.fileSize, external: false }] : []);
+---
+
+<BaseLayout title={`${item.title} ${item.version} · 学习区`} description={item.description}>
+  <article>
+    <header class="post-header">
+      <div class="post-meta" style="margin-bottom:0.6rem;">
+        <span class="tag tag--accent">{item.lang}</span>
+        <span class="tag">{item.version}</span>
+        <span class="tag">{item.platform}</span>
+        <time datetime={item.date}>
+          发布于 {new Date(item.date + 'T00:00:00').toLocaleDateString('zh-CN')}
+        </time>
+      </div>
+      <h1>{item.title}</h1>
+      <p style="color:var(--color-text-light);font-size:1rem;margin-top:0.6rem;">
+        {item.description}
+      </p>
+    </header>
+
+    {item.image && (
+      <img src={item.image} alt={`${item.title} 界面截图`} width="860" height="400" loading="lazy" decoding="async" />
+    )}
+
+    <div class="prose" style="margin-top:1.2rem;">
+      {item.detail?.intro && <p>{item.detail.intro}</p>}
+
+      {item.detail?.features && item.detail.features.length > 0 && (
+        <>
+          <h2>功能特性</h2>
+          <ul>
+            {item.detail.features.map((f) => <li>{f}</li>)}
+          </ul>
+        </>
+      )}
+
+      {item.detail?.requirements && (
+        <>
+          <h2>运行环境</h2>
+          <p>{item.detail.requirements}</p>
+        </>
+      )}
+
+      {downloads.length > 0 && (
+        <p style="margin:1.5rem 0;display:flex;gap:0.75rem;flex-wrap:wrap;">
+          {
+            downloads.map((d) => {
+              if (d.disabled) {
+                return (
+                  <span
+                    style="background:#e2e8f0;color:#94a3b8;padding:0.6rem 1.4rem;border-radius:8px;font-weight:500;cursor:not-allowed;display:inline-flex;align-items:center;gap:0.4rem;"
+                    title="网盘链接待上传，上线后开放"
+                  >
+                    {d.label}{d.size ? `（${d.size}）` : ''}
+                  </span>
+                );
+              }
+              if (d.external) {
+                return (
+                  <a href={d.url} target="_blank" rel="noopener" class="btn-primary">
+                    {d.label}{d.size ? `（${d.size}）` : ''} ↗
+                  </a>
+                );
+              }
+              return (
+                <a href={withBase(d.url)} class="btn-primary" download>
+                  {d.label}{d.size ? `（${d.size}）` : ''} ↗
+                </a>
+              );
+            })
+          }
+        </p>
+      )}
+    </div>
+  </article>
+
+  <p style="margin-top:3rem;">
+    <a href={withBase('/learning/')}>← 返回学习区列表</a>
+  </p>
+</BaseLayout>
